@@ -1,0 +1,512 @@
+
+import json
+from pathlib import Path
+
+from sentence_transformers import SentenceTransformer, util
+
+from .chunking import create_page_chunks
+from .pdf_reader import extract_pdf_text
+
+
+# --------------------------------------------------
+# PROJECT PATHS
+# --------------------------------------------------
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+UPLOAD_FOLDER = BASE_DIR / "uploads"
+
+TEXT_FILE = BASE_DIR / "extracted_text.txt"
+
+METADATA_FILE = UPLOAD_FOLDER / "documents.json"
+
+
+# --------------------------------------------------
+# MODEL AND INDEX CACHE
+# --------------------------------------------------
+
+model = None
+
+chunks = []
+
+chunk_embeddings = None
+
+indexed_files_signature = None
+
+
+# --------------------------------------------------
+# LOAD SENTENCE TRANSFORMER MODEL
+# --------------------------------------------------
+
+def load_model():
+
+    global model
+
+    if model is None:
+
+        print("Loading Sentence Transformer model...")
+
+        model = SentenceTransformer("all-MiniLM-L6-v2")
+
+    return model
+
+
+# --------------------------------------------------
+# LOAD DOCUMENT METADATA
+# --------------------------------------------------
+
+def get_document_metadata():
+
+    if not METADATA_FILE.exists():
+        return {}
+
+    try:
+
+        documents = json.loads(
+            METADATA_FILE.read_text(encoding="utf-8")
+        )
+
+        if not isinstance(documents, list):
+            raise ValueError("Invalid document metadata format.")
+
+        return {
+            item["id"]: item
+            for item in documents
+            if isinstance(item, dict)
+            and isinstance(item.get("id"), str)
+        }
+
+    except (json.JSONDecodeError, OSError, ValueError) as error:
+
+        raise RuntimeError(
+            "Unable to read uploads/documents.json."
+        ) from error
+
+
+# --------------------------------------------------
+# GET ALL DOCUMENT FILES
+# --------------------------------------------------
+
+def get_document_files():
+    """
+    Find all uploaded PDFs and their extracted text files.
+
+    If a TXT file is missing, extract text from its PDF.
+
+    If there are no uploaded PDFs, use the old
+    extracted_text.txt file for backward compatibility.
+    """
+
+    UPLOAD_FOLDER.mkdir(exist_ok=True)
+
+    document_files = []
+
+    pdf_files = sorted(UPLOAD_FOLDER.glob("*.pdf"))
+
+    for pdf_path in pdf_files:
+
+        text_path = pdf_path.with_suffix(".txt")
+
+        # Extract text if missing.
+        if not text_path.exists():
+
+            print("Extracting text from:", pdf_path.name)
+
+            extracted_text = extract_pdf_text(
+                str(pdf_path)
+            )
+
+            if not extracted_text.strip():
+
+                print("Skipping empty PDF:", pdf_path.name)
+
+                continue
+
+            text_path.write_text(
+                extracted_text,
+                encoding="utf-8"
+            )
+
+        if text_path.exists():
+
+            document_files.append({
+
+                "document_id": pdf_path.stem,
+
+                "pdf_path": pdf_path,
+
+                "text_path": text_path
+
+            })
+
+    # Backward compatibility for older projects.
+    if not document_files and TEXT_FILE.exists():
+
+        document_files.append({
+
+            "document_id": "legacy",
+
+            "pdf_path": None,
+
+            "text_path": TEXT_FILE
+
+        })
+
+    return document_files
+
+
+# --------------------------------------------------
+# DOCUMENT INDEX SIGNATURE
+# --------------------------------------------------
+
+def get_files_signature(document_files):
+    """
+    Check whether PDFs, extracted text or metadata changed.
+    """
+
+    signature = []
+
+    for document in document_files:
+
+        text_path = document["text_path"]
+        pdf_path = document["pdf_path"]
+
+        signature.append((
+            str(text_path),
+            text_path.stat().st_mtime_ns,
+            text_path.stat().st_size
+        ))
+
+        if pdf_path is not None:
+
+            signature.append((
+                str(pdf_path),
+                pdf_path.stat().st_mtime_ns,
+                pdf_path.stat().st_size
+            ))
+
+    if METADATA_FILE.exists():
+
+        signature.append((
+            str(METADATA_FILE),
+            METADATA_FILE.stat().st_mtime_ns,
+            METADATA_FILE.stat().st_size
+        ))
+
+    return tuple(signature)
+
+
+# --------------------------------------------------
+# BUILD MULTI-DOCUMENT INDEX
+# --------------------------------------------------
+
+def load_document_index():
+
+    global chunks
+    global chunk_embeddings
+    global indexed_files_signature
+
+    document_files = get_document_files()
+
+    if not document_files:
+
+        raise FileNotFoundError(
+            "No documents found. Please upload a PDF first."
+        )
+
+    current_signature = get_files_signature(
+        document_files
+    )
+
+    # Reuse index if nothing has changed.
+    if indexed_files_signature == current_signature:
+
+        print("Using existing document index.")
+
+        return
+
+    print("\nBuilding multi-document search index...")
+
+    metadata = get_document_metadata()
+
+    all_chunks = []
+
+    # Process every document.
+    for document in document_files:
+
+        document_id = document["document_id"]
+
+        text_path = document["text_path"]
+
+        document_info = metadata.get(
+            document_id,
+            {}
+        )
+
+        if document_id == "legacy":
+
+            filename = "extracted_text.txt"
+
+        else:
+
+            filename = document_info.get(
+                "filename",
+                document_id + ".pdf"
+            )
+
+        print("Processing:", filename)
+
+        text = text_path.read_text(
+            encoding="utf-8"
+        )
+
+        if not text.strip():
+
+            print("Skipping empty document:", filename)
+
+            continue
+
+        document_chunks = create_page_chunks(
+            text,
+            chunk_size=200,
+            overlap=20
+        )
+
+        # Keep chunk numbers specific to each document.
+        for chunk_number, chunk in enumerate(
+            document_chunks,
+            start=1
+        ):
+
+            all_chunks.append({
+
+                "document_id": document_id,
+
+                "filename": filename,
+
+                "page": chunk["page"],
+
+                "chunk_number": chunk_number,
+
+                "text": chunk["text"]
+
+            })
+
+    if not all_chunks:
+
+        raise ValueError(
+            "No readable document chunks found."
+        )
+
+    # Load embedding model.
+    current_model = load_model()
+
+    print("Generating document embeddings...")
+
+    new_embeddings = current_model.encode(
+
+        [chunk["text"] for chunk in all_chunks],
+
+        convert_to_tensor=True,
+
+        show_progress_bar=False
+
+    )
+
+    # Update the index only after successful processing.
+    chunks = all_chunks
+
+    chunk_embeddings = new_embeddings
+
+    indexed_files_signature = current_signature
+
+    print("\nDocument index built successfully!")
+
+    print("Total documents:", len(document_files))
+
+    print("Total chunks:", len(chunks))
+
+
+# --------------------------------------------------
+# RETRIEVE RELEVANT CHUNKS
+# --------------------------------------------------
+
+def retrieve_relevant_chunks(
+    question,
+    top_k=5,
+    selected_documents=None
+):
+    """
+    Retrieve relevant chunks from selected PDFs.
+
+    If selected_documents is empty or None,
+    search across all uploaded PDFs.
+    """
+
+    if not isinstance(question, str) or not question.strip():
+
+        raise ValueError("Question cannot be empty.")
+
+    if not isinstance(top_k, int) or top_k < 1:
+
+        raise ValueError("top_k must be a positive integer.")
+
+    if selected_documents is None:
+
+        selected_documents = []
+
+    if not isinstance(selected_documents, list):
+
+        raise ValueError(
+            "Selected documents must be a list of IDs."
+        )
+
+    if not all(
+        isinstance(document_id, str)
+        for document_id in selected_documents
+    ):
+
+        raise ValueError(
+            "Invalid selected document IDs."
+        )
+
+    # Build or refresh index.
+    load_document_index()
+
+    # Empty selection means search all documents.
+    if selected_documents:
+
+        available_ids = {
+            chunk["document_id"]
+            for chunk in chunks
+        }
+
+        invalid_ids = (
+            set(selected_documents) - available_ids
+        )
+
+        if invalid_ids:
+
+            raise ValueError(
+                "One or more selected documents are unavailable. "
+                "Refresh the document library and try again."
+            )
+
+        candidate_indices = [
+
+            index
+
+            for index, chunk in enumerate(chunks)
+
+            if chunk["document_id"] in selected_documents
+
+        ]
+
+    else:
+
+        candidate_indices = list(
+            range(len(chunks))
+        )
+
+    if not candidate_indices:
+
+        raise ValueError(
+            "No chunks found for the selected documents."
+        )
+
+    # Convert question into an embedding.
+    current_model = load_model()
+
+    question_embedding = current_model.encode(
+
+        question.strip(),
+
+        convert_to_tensor=True
+
+    )
+
+    # Compare question with eligible document chunks only.
+    candidate_embeddings = chunk_embeddings[
+        candidate_indices
+    ]
+
+    similarities = util.cos_sim(
+
+        question_embedding,
+
+        candidate_embeddings
+
+    )[0]
+
+    count = min(
+        top_k,
+        len(candidate_indices)
+    )
+
+    top_indices = similarities.argsort(
+        descending=True
+    )[:count]
+
+    results = []
+
+    for index in top_indices:
+
+        result_index = int(index.item())
+
+        chunk_index = candidate_indices[result_index]
+
+        chunk = chunks[chunk_index]
+
+        results.append({
+
+            "document_id": chunk["document_id"],
+
+            "filename": chunk["filename"],
+
+            "page": chunk["page"],
+
+            "chunk_number": chunk["chunk_number"],
+
+            "text": chunk["text"],
+
+            "similarity": float(
+                similarities[result_index].item()
+            )
+
+        })
+
+    return results
+
+
+# --------------------------------------------------
+# TEST RETRIEVAL
+# --------------------------------------------------
+
+if __name__ == "__main__":
+
+    question = input(
+        "Enter your question: "
+    )
+
+    results = retrieve_relevant_chunks(question)
+
+    print("\nRETRIEVAL RESULTS")
+
+    for result in results:
+
+        print("\n------------------------------")
+
+        print("Document:", result["filename"])
+
+        print("Document ID:", result["document_id"])
+
+        print("Page:", result["page"])
+
+        print("Chunk:", result["chunk_number"])
+
+        print(
+            "Similarity:",
+            round(result["similarity"], 4)
+        )
+
+        print("Text:", result["text"])

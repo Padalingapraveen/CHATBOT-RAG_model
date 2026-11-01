@@ -1,0 +1,38 @@
+# Python virtual environments
+/venv/
+/.venv/
+venv/
+.venv/
+
+# Python bytecode and test/tool caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Uploaded user documents and generated metadata
+*.pdf
+/uploads/*
+!/uploads/.gitkeep
+/extracted_text.txt
+
+# Model and generated index data (if created inside the project)
+/.cache/
+/models/
+/embeddings/
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini

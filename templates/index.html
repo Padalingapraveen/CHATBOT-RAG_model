@@ -1,0 +1,221 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>DocuMind AI</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+    <div class="app-container">
+
+        <!-- Sidebar -->
+        <aside class="sidebar">
+
+            <div class="logo">DocuMind <span>AI</span></div>
+
+            <p class="sidebar-label">WORKSPACE</p>
+
+
+            <!-- Document Library -->
+            <div class="library-header">
+
+                <h3>Document Library</h3>
+
+                <span id="documentCount">0</span>
+
+            </div>
+
+
+            <p class="library-description">
+                Select PDFs to search. If none are selected,
+                all documents will be searched.
+            </p>
+
+
+            <!-- Document Selection Actions -->
+            <div class="library-actions">
+
+                <button
+                    type="button"
+                    id="selectAllButton"
+                >
+                    Select All
+                </button>
+
+                <button
+                    type="button"
+                    id="clearSelectionButton"
+                >
+                    Deselect
+                </button>
+
+                <button
+                    type="button"
+                    id="deleteSelectedButton"
+                >
+                    Delete Selected
+                </button>
+
+            </div>
+
+
+            <!-- Uploaded Document List -->
+            <div id="documentList" class="document-list">
+
+                <p class="library-loading">
+                    Loading documents...
+                </p>
+
+            </div>
+
+
+            <!-- PDF Upload -->
+            <input
+                type="file"
+                id="pdfInput"
+                accept=".pdf,application/pdf"
+                hidden
+            >
+
+
+            <button
+                type="button"
+                id="uploadButton"
+                class="upload-button"
+            >
+                + Upload PDF
+            </button>
+
+
+            <p
+                id="uploadStatus"
+                class="upload-status"
+            ></p>
+
+
+            <!-- Sidebar Footer -->
+            <div class="sidebar-info">
+
+                <p>Powered by</p>
+
+                <strong>MiniLM + Ollama</strong>
+
+            </div>
+
+        </aside>
+
+
+        <!-- Main Chat -->
+        <main class="main-content">
+
+
+            <!-- Header -->
+            <header class="topbar">
+
+                <div>
+
+                    <h2>Document Assistant</h2>
+
+                    <p id="scopeStatus">
+                        Searching all documents
+                    </p>
+
+                </div>
+
+
+                <div class="status">
+
+                    <span class="status-dot"></span>
+
+                    Online
+
+                </div>
+
+            </header>
+
+
+            <!-- Chat Area -->
+            <section
+                class="chat-area"
+                id="chatArea"
+            >
+
+                <div class="welcome-message">
+
+                    <div class="welcome-icon">
+                        D
+                    </div>
+
+
+                    <h1>
+                        Welcome to DocuMind AI
+                    </h1>
+
+
+                    <p>
+                        Your intelligent document assistant.
+                        Upload PDFs, select documents and ask
+                        questions to get answers from their content.
+                    </p>
+
+
+                    <div class="suggestion">
+                        "What is the main topic of these documents?"
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- Chat Input Area -->
+            <footer class="input-area">
+
+                <form id="chatForm">
+
+                    <textarea
+                        id="questionInput"
+                        placeholder="Ask something about your documents..."
+                        rows="1"
+                        required
+                    ></textarea>
+
+
+                    <button
+                        type="submit"
+                        id="sendButton"
+                    >
+                        Send ↑
+                    </button>
+
+                </form>
+
+
+                <p class="footer-note">
+
+                    DocuMind AI can make mistakes.
+                    Verify important information with the source pages.
+
+                </p>
+
+            </footer>
+
+        </main>
+
+    </div>
+
+
+    <!-- JavaScript -->
+    <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+
+</body>
+
+</html>
