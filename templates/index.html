@@ -10,6 +10,13 @@
 
     <link rel="stylesheet"
           href="{{ url_for('static', filename='css/style.css') }}">
+
+    <!-- PDF.js Text Layer Styles -->
+    <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf_viewer.min.css"
+    >
+
 </head>
 
 <body>
@@ -23,59 +30,60 @@
 
             <p class="sidebar-label">WORKSPACE</p>
 
+            <button
+                type="button"
+                id="newChatButton"
+                class="new-chat-button">
+                + New Chat
+            </button>
 
-            <!-- Document Library -->
-            <div class="library-header">
+            <!-- Chat History -->
+            <div class="chat-history-section">
 
-                <h3>Document Library</h3>
+                <div class="chat-history-header">
+                    <h3>Chat History</h3>
+                </div>
 
-                <span id="documentCount">0</span>
+                <div id="chatHistoryList" class="chat-history-list">
+                    <p class="library-loading">
+                        Loading chat history...
+                    </p>
+                </div>
 
             </div>
 
+            <!-- Document Library -->
+            <div class="library-header">
+                <h3>Document Library</h3>
+                <span id="documentCount">0</span>
+            </div>
 
             <p class="library-description">
                 Select PDFs to search. If none are selected,
                 all documents will be searched.
             </p>
 
-
-            <!-- Document Selection Actions -->
             <div class="library-actions">
 
-                <button
-                    type="button"
-                    id="selectAllButton"
-                >
+                <button type="button" id="selectAllButton">
                     Select All
                 </button>
 
-                <button
-                    type="button"
-                    id="clearSelectionButton"
-                >
+                <button type="button" id="clearSelectionButton">
                     Deselect
                 </button>
 
-                <button
-                    type="button"
-                    id="deleteSelectedButton"
-                >
+                <button type="button" id="deleteSelectedButton">
                     Delete Selected
                 </button>
 
             </div>
 
-
-            <!-- Uploaded Document List -->
             <div id="documentList" class="document-list">
-
                 <p class="library-loading">
                     Loading documents...
                 </p>
-
             </div>
-
 
             <!-- PDF Upload -->
             <input
@@ -85,29 +93,19 @@
                 hidden
             >
 
-
             <button
                 type="button"
                 id="uploadButton"
-                class="upload-button"
-            >
+                class="upload-button">
                 + Upload PDF
             </button>
 
-
-            <p
-                id="uploadStatus"
-                class="upload-status"
-            ></p>
-
+            <p id="uploadStatus" class="upload-status"></p>
 
             <!-- Sidebar Footer -->
             <div class="sidebar-info">
-
                 <p>Powered by</p>
-
                 <strong>MiniLM + Ollama</strong>
-
             </div>
 
         </aside>
@@ -116,26 +114,42 @@
         <!-- Main Chat -->
         <main class="main-content">
 
-
             <!-- Header -->
             <header class="topbar">
 
                 <div>
-
                     <h2>Document Assistant</h2>
 
                     <p id="scopeStatus">
                         Searching all documents
                     </p>
-
                 </div>
 
+                <div class="topbar-actions">
 
-                <div class="status">
+                    <!-- Export Current Conversation -->
+                    <button
+                        type="button"
+                        id="exportTxtButton"
+                        class="export-button"
+                        title="Download conversation as TXT"
+                        disabled>
+                        Export TXT
+                    </button>
 
-                    <span class="status-dot"></span>
+                    <button
+                        type="button"
+                        id="exportPdfButton"
+                        class="export-button"
+                        title="Download conversation as PDF"
+                        disabled>
+                        Export PDF
+                    </button>
 
-                    Online
+                    <div class="status">
+                        <span class="status-dot"></span>
+                        Online
+                    </div>
 
                 </div>
 
@@ -143,29 +157,19 @@
 
 
             <!-- Chat Area -->
-            <section
-                class="chat-area"
-                id="chatArea"
-            >
+            <section class="chat-area" id="chatArea">
 
                 <div class="welcome-message">
 
-                    <div class="welcome-icon">
-                        D
-                    </div>
+                    <div class="welcome-icon">D</div>
 
-
-                    <h1>
-                        Welcome to DocuMind AI
-                    </h1>
-
+                    <h1>Welcome to DocuMind AI</h1>
 
                     <p>
                         Your intelligent document assistant.
                         Upload PDFs, select documents and ask
                         questions to get answers from their content.
                     </p>
-
 
                     <div class="suggestion">
                         "What is the main topic of these documents?"
@@ -188,22 +192,15 @@
                         required
                     ></textarea>
 
-
-                    <button
-                        type="submit"
-                        id="sendButton"
-                    >
+                    <button type="submit" id="sendButton">
                         Send ↑
                     </button>
 
                 </form>
 
-
                 <p class="footer-note">
-
                     DocuMind AI can make mistakes.
                     Verify important information with the source pages.
-
                 </p>
 
             </footer>
@@ -213,9 +210,230 @@
     </div>
 
 
-    <!-- JavaScript -->
-    <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+    <!-- ==========================================
+         PDF PREVIEW MODAL
+    =========================================== -->
+
+    <div
+        id="pdfPreviewModal"
+        class="pdf-preview-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pdfPreviewTitle"
+        hidden
+    >
+
+        <div class="pdf-preview-container">
+
+            <!-- Preview Header -->
+            <div class="pdf-preview-header">
+
+                <div class="pdf-preview-heading">
+
+                    <h2 id="pdfPreviewTitle">
+                        PDF Preview
+                    </h2>
+
+                    <p id="pdfPreviewFilename"></p>
+
+                </div>
+
+                <button
+                    type="button"
+                    id="closePdfPreviewButton"
+                    class="pdf-preview-close"
+                    aria-label="Close PDF preview">
+                    &times;
+                </button>
+
+            </div>
+
+
+            <!-- PDF Toolbar -->
+            <div class="pdf-preview-toolbar">
+
+                <button
+                    type="button"
+                    id="pdfPreviousPageButton"
+                    title="Previous page"
+                    aria-label="Previous page">
+                    &#10094;
+                </button>
+
+                <label for="pdfPageInput">
+                    Page
+                </label>
+
+                <input
+                    type="number"
+                    id="pdfPageInput"
+                    min="1"
+                    value="1"
+                >
+
+                <span id="pdfPageStatus">
+                    of 0 pages
+                </span>
+
+                <button
+                    type="button"
+                    id="goToPdfPageButton">
+                    Go
+                </button>
+
+                <button
+                    type="button"
+                    id="pdfNextPageButton"
+                    title="Next page"
+                    aria-label="Next page">
+                    &#10095;
+                </button>
+
+                <span class="pdf-toolbar-divider"></span>
+
+                <button
+                    type="button"
+                    id="pdfZoomOutButton"
+                    title="Zoom out"
+                    aria-label="Zoom out">
+                    −
+                </button>
+
+                <span id="pdfZoomLevel">
+                    100%
+                </span>
+
+                <button
+                    type="button"
+                    id="pdfZoomInButton"
+                    title="Zoom in"
+                    aria-label="Zoom in">
+                    +
+                </button>
+
+                <button
+                    type="button"
+                    id="pdfFitPageButton"
+                    title="Fit to page">
+                    Fit
+                </button>
+
+                <span class="pdf-toolbar-divider"></span>
+
+                <button
+                    type="button"
+                    id="pdfFullscreenButton"
+                    title="Full screen">
+                    Full Screen
+                </button>
+
+            </div>
+
+
+            <!-- PDF Search Toolbar -->
+            <div class="pdf-search-toolbar">
+
+                <input
+                    type="search"
+                    id="pdfSearchInput"
+                    placeholder="Find text in this PDF..."
+                    aria-label="Search PDF text"
+                >
+
+                <button
+                    type="button"
+                    id="pdfSearchButton">
+                    Search
+                </button>
+
+                <button
+                    type="button"
+                    id="pdfClearSearchButton">
+                    Clear
+                </button>
+
+                <span id="pdfSearchStatus" aria-live="polite"></span>
+
+            </div>
+
+
+            <!-- PDF Rendering Area -->
+            <div
+                id="pdfViewerContainer"
+                class="pdf-viewer-container"
+                tabindex="0"
+                aria-label="PDF document pages">
+
+                <div
+                    id="pdfLoadingMessage"
+                    class="pdf-loading-message">
+                    Loading PDF...
+                </div>
+
+                <div
+                    id="pdfPageContainer"
+                    class="pdf-page-container"
+                    hidden>
+
+                    <canvas id="pdfCanvas"></canvas>
+
+                    <div
+                        id="pdfTextLayer"
+                        class="textLayer">
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- PDF Preview Error -->
+            <p
+                id="pdfPreviewError"
+                class="pdf-preview-error"
+                role="alert"
+                hidden>
+            </p>
+
+        </div>
+
+    </div>
+
+
+    <!-- ==========================================
+         PDF.JS LIBRARY
+    =========================================== -->
+
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js">
+    </script>
+
+
+    <!-- ==========================================
+         JSPDF LIBRARY FOR CHAT EXPORT
+    =========================================== -->
+
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">
+    </script>
+
+
+    <!-- ==========================================
+         DOCUMIND APPLICATION JAVASCRIPT
+    =========================================== -->
+
+    <script
+        src="{{ url_for('static', filename='js/chat.js') }}">
+    </script>
+
+
+    <!-- ==========================================
+         CHAT EXPORT JAVASCRIPT
+    =========================================== -->
+
+    <script
+        src="{{ url_for('static', filename='js/chat-export.js') }}">
+    </script>
 
 </body>
-
 </html>
